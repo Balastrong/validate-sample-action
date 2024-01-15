@@ -1,9 +1,14 @@
-import { getInput, setFailed } from "@actions/core";
+import { error, getInput, setFailed } from "@actions/core";
 import { context, getOctokit } from "@actions/github";
 import { Buffer } from "buffer";
 import { HttpClient } from "@actions/http-client";
 
 const http = new HttpClient();
+
+type Validation = {
+  isValid: boolean;
+  errors: string[];
+};
 
 export async function run() {
   const token = getInput("gh-token");
@@ -25,7 +30,10 @@ export async function run() {
         files.data.filter((file) => file.filename.endsWith("samples.json"))
       );
 
-    let hasErrors = false;
+    const errors = [] as {
+      fileUrl: string;
+      body: Validation;
+    }[];
 
     const filePromises = files.map(async (file) => {
       const fileData = await octokit.request(file.contents_url);
@@ -42,28 +50,31 @@ export async function run() {
         }
       );
 
-      const body = JSON.parse(await res.readBody()) as {
-        isValid: boolean;
-        errors: string[];
-      };
+      const body: Validation = JSON.parse(await res.readBody());
 
       if (!body.isValid) {
-        hasErrors = true;
-
-        octokit.rest.issues.createComment({
-          issue_number: context.issue.number,
-          owner: context.repo.owner,
-          repo: context.repo.repo,
-          body: `File: ${getFileMarkdownUrl(file.blob_url)}\n${body.errors
-            .map((e) => "- " + e)
-            .join("\n")}\n`,
-        });
+        errors.push({ fileUrl: file.blob_url, body });
       }
     });
 
     await Promise.all(filePromises);
 
-    if (hasErrors) {
+    if (errors.length > 0) {
+      const body = errors
+        .map((e) => {
+          return `File: ${getFileMarkdownUrl(e.fileUrl)}\n${e.body.errors
+            .map((e) => "- " + e)
+            .join("\n")}\n`;
+        })
+        .join("\n");
+
+      octokit.rest.issues.createComment({
+        issue_number: context.issue.number,
+        owner: context.repo.owner,
+        repo: context.repo.repo,
+        body: `### Validation failed!\n${body}`,
+      });
+
       setFailed("Invalid samples!");
     }
   } catch (error) {
@@ -75,8 +86,8 @@ export async function run() {
 run();
 
 function getFileMarkdownUrl(blobUrl: string) {
-  const [first, ...rest] = blobUrl.split("blob/")[1].split("/");
+  const [_, ...rest] = blobUrl.split("blob/")[1].split("/");
   const name = rest.join("/");
 
-  return `[${name}](${blobUrl})`;
+  return `[${decodeURIComponent(name)}](${blobUrl})`;
 }

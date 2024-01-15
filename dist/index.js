@@ -33544,7 +33544,7 @@ async function run() {
             // pull_number: 5,
         })
             .then((files) => files.data.filter((file) => file.filename.endsWith("samples.json")));
-        let hasErrors = false;
+        const errors = [];
         const filePromises = files.map(async (file) => {
             const fileData = await octokit.request(file.contents_url);
             const fileContent = buffer_1.Buffer.from(fileData.data.content, "base64").toString();
@@ -33553,19 +33553,24 @@ async function run() {
             });
             const body = JSON.parse(await res.readBody());
             if (!body.isValid) {
-                hasErrors = true;
-                octokit.rest.issues.createComment({
-                    issue_number: github_1.context.issue.number,
-                    owner: github_1.context.repo.owner,
-                    repo: github_1.context.repo.repo,
-                    body: `File: ${getFileMarkdownUrl(file.blob_url)}\n${body.errors
-                        .map((e) => "- " + e)
-                        .join("\n")}\n`,
-                });
+                errors.push({ fileUrl: file.blob_url, body });
             }
         });
         await Promise.all(filePromises);
-        if (hasErrors) {
+        if (errors.length > 0) {
+            const body = errors
+                .map((e) => {
+                return `File: ${getFileMarkdownUrl(e.fileUrl)}\n${e.body.errors
+                    .map((e) => "- " + e)
+                    .join("\n")}\n`;
+            })
+                .join("\n");
+            octokit.rest.issues.createComment({
+                issue_number: github_1.context.issue.number,
+                owner: github_1.context.repo.owner,
+                repo: github_1.context.repo.repo,
+                body: `### Validation failed!\n${body}`,
+            });
             (0, core_1.setFailed)("Invalid samples!");
         }
     }
@@ -33577,9 +33582,9 @@ async function run() {
 exports.run = run;
 run();
 function getFileMarkdownUrl(blobUrl) {
-    const [first, ...rest] = blobUrl.split("blob/")[1].split("/");
+    const [_, ...rest] = blobUrl.split("blob/")[1].split("/");
     const name = rest.join("/");
-    return `[${name}](${blobUrl})`;
+    return `[${decodeURIComponent(name)}](${blobUrl})`;
 }
 
 })();
