@@ -33537,22 +33537,38 @@ async function run() {
         // get all files in the PR
         const files = await octokit.rest.pulls
             .listFiles({
-            //   owner: context.repo.owner,
-            //   repo: context.repo.repo,
-            //   pull_number: pullRequest!.number,
-            owner: "kasuken",
-            repo: "TestCustomActionUrl",
-            pull_number: 4,
+            owner: github_1.context.repo.owner,
+            repo: github_1.context.repo.repo,
+            pull_number: pullRequest.number,
+            // owner: "kasuken",
+            // repo: "TestCustomActionUrl",
+            // pull_number: 4,
         })
             .then((files) => files.data.filter((file) => file.filename.endsWith("samples.json")));
-        const file = files[0];
-        const fileData = await octokit.request(file.contents_url);
-        const fileContent = buffer_1.Buffer.from(fileData.data.content, "base64").toString();
-        const res = await http.post("https://m365-galleries-test.azurewebsites.net/Samples/validateSample", fileContent, {
-            "Content-Type": "application/json",
+        let hasErrors = false;
+        files.forEach(async (file) => {
+            const fileData = await octokit.request(file.contents_url);
+            const fileContent = buffer_1.Buffer.from(fileData.data.content, "base64").toString();
+            const res = await http.post("https://m365-galleries-test.azurewebsites.net/Samples/validateSample", fileContent, {
+                "Content-Type": "application/json",
+            });
+            const body = JSON.parse(await res.readBody());
+            if (!body.isValid) {
+                hasErrors = true;
+                body.errors.forEach((error) => console.log(error));
+                octokit.rest.issues.createComment({
+                    issue_number: github_1.context.issue.number,
+                    owner: github_1.context.repo.owner,
+                    repo: github_1.context.repo.repo,
+                    body: `File: ${file.raw_url}\n${body.errors
+                        .map((e) => "- " + e)
+                        .join("\n")}\n`,
+                });
+            }
         });
-        const body = await res.readBody();
-        console.log("A" + body);
+        if (hasErrors) {
+            (0, core_1.setFailed)("Invalid samples");
+        }
     }
     catch (error) {
         console.log(error);
