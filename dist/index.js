@@ -33526,26 +33526,37 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = void 0;
 const core_1 = __nccwpck_require__(2186);
 const github_1 = __nccwpck_require__(5438);
+const buffer_1 = __nccwpck_require__(4300);
+const http_client_1 = __nccwpck_require__(6255);
 async function run() {
     const token = (0, core_1.getInput)("gh-token");
     const octokit = (0, github_1.getOctokit)(token);
     const pullRequest = github_1.context.payload.pull_request;
+    const http = new http_client_1.HttpClient();
     try {
         // get all files in the PR
-        const files = await octokit.rest.pulls.listFiles({
+        const files = await octokit.rest.pulls
+            .listFiles({
             //   owner: context.repo.owner,
             //   repo: context.repo.repo,
             //   pull_number: pullRequest!.number,
             owner: "kasuken",
             repo: "TestCustomActionUrl",
             pull_number: 4,
+        })
+            .then((files) => files.data.filter((file) => file.filename.endsWith("samples.json")));
+        const file = files[0];
+        const fileData = await octokit.request(file.contents_url);
+        const fileContent = buffer_1.Buffer.from(fileData.data.content, "base64").toString();
+        const res = await http.post("https://m365-galleries-test.azurewebsites.net/Samples/validateSample", fileContent, {
+            "Content-Type": "application/json",
         });
-        files.data.forEach((file) => {
-            console.log(file);
-        });
+        const body = await res.readBody();
+        console.log("A" + body);
     }
     catch (error) {
-        (0, core_1.setFailed)(error === null || error === void 0 ? void 0 : error.message);
+        console.log(error);
+        (0, core_1.setFailed)(error);
     }
 }
 exports.run = run;
