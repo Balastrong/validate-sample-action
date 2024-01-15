@@ -33528,13 +33528,12 @@ const core_1 = __nccwpck_require__(2186);
 const github_1 = __nccwpck_require__(5438);
 const buffer_1 = __nccwpck_require__(4300);
 const http_client_1 = __nccwpck_require__(6255);
+const http = new http_client_1.HttpClient();
 async function run() {
     const token = (0, core_1.getInput)("gh-token");
     const octokit = (0, github_1.getOctokit)(token);
     const pullRequest = github_1.context.payload.pull_request;
-    const http = new http_client_1.HttpClient();
     try {
-        // get all files in the PR
         const files = await octokit.rest.pulls
             .listFiles({
             owner: github_1.context.repo.owner,
@@ -33542,11 +33541,11 @@ async function run() {
             pull_number: pullRequest.number,
             // owner: "kasuken",
             // repo: "TestCustomActionUrl",
-            // pull_number: 4,
+            // pull_number: 5,
         })
             .then((files) => files.data.filter((file) => file.filename.endsWith("samples.json")));
         let hasErrors = false;
-        files.forEach(async (file) => {
+        const filePromises = files.map(async (file) => {
             const fileData = await octokit.request(file.contents_url);
             const fileContent = buffer_1.Buffer.from(fileData.data.content, "base64").toString();
             const res = await http.post("https://m365-galleries-test.azurewebsites.net/Samples/validateSample", fileContent, {
@@ -33555,19 +33554,19 @@ async function run() {
             const body = JSON.parse(await res.readBody());
             if (!body.isValid) {
                 hasErrors = true;
-                body.errors.forEach((error) => console.log(error));
                 octokit.rest.issues.createComment({
                     issue_number: github_1.context.issue.number,
                     owner: github_1.context.repo.owner,
                     repo: github_1.context.repo.repo,
-                    body: `File: ${file.raw_url}\n${body.errors
+                    body: `File: ${getFileMarkdownUrl(file.blob_url)}\n${body.errors
                         .map((e) => "- " + e)
                         .join("\n")}\n`,
                 });
             }
         });
+        await Promise.all(filePromises);
         if (hasErrors) {
-            (0, core_1.setFailed)("Invalid samples");
+            (0, core_1.setFailed)("Invalid samples!");
         }
     }
     catch (error) {
@@ -33577,6 +33576,11 @@ async function run() {
 }
 exports.run = run;
 run();
+function getFileMarkdownUrl(blobUrl) {
+    const [first, ...rest] = blobUrl.split("blob/")[1].split("/");
+    const name = rest.join("/");
+    return `[${name}](${blobUrl})`;
+}
 
 })();
 

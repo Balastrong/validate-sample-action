@@ -3,16 +3,15 @@ import { context, getOctokit } from "@actions/github";
 import { Buffer } from "buffer";
 import { HttpClient } from "@actions/http-client";
 
+const http = new HttpClient();
+
 export async function run() {
   const token = getInput("gh-token");
 
   const octokit = getOctokit(token);
   const pullRequest = context.payload.pull_request;
 
-  const http = new HttpClient();
-
   try {
-    // get all files in the PR
     const files = await octokit.rest.pulls
       .listFiles({
         owner: context.repo.owner,
@@ -20,7 +19,7 @@ export async function run() {
         pull_number: pullRequest!.number,
         // owner: "kasuken",
         // repo: "TestCustomActionUrl",
-        // pull_number: 4,
+        // pull_number: 5,
       })
       .then((files) =>
         files.data.filter((file) => file.filename.endsWith("samples.json"))
@@ -28,7 +27,7 @@ export async function run() {
 
     let hasErrors = false;
 
-    files.forEach(async (file) => {
+    const filePromises = files.map(async (file) => {
       const fileData = await octokit.request(file.contents_url);
       const fileContent = Buffer.from(
         fileData.data.content,
@@ -50,21 +49,22 @@ export async function run() {
 
       if (!body.isValid) {
         hasErrors = true;
-        body.errors.forEach((error) => console.log(error));
 
         octokit.rest.issues.createComment({
           issue_number: context.issue.number,
           owner: context.repo.owner,
           repo: context.repo.repo,
-          body: `File: ${file.raw_url}\n${body.errors
+          body: `File: ${getFileMarkdownUrl(file.blob_url)}\n${body.errors
             .map((e) => "- " + e)
             .join("\n")}\n`,
         });
       }
     });
 
+    await Promise.all(filePromises);
+
     if (hasErrors) {
-      setFailed("Invalid samples");
+      setFailed("Invalid samples!");
     }
   } catch (error) {
     console.log(error);
@@ -73,3 +73,10 @@ export async function run() {
 }
 
 run();
+
+function getFileMarkdownUrl(blobUrl: string) {
+  const [first, ...rest] = blobUrl.split("blob/")[1].split("/");
+  const name = rest.join("/");
+
+  return `[${name}](${blobUrl})`;
+}
