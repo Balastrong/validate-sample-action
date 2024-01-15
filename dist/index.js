@@ -33533,12 +33533,15 @@ async function run() {
     try {
         // get all files in the PR
         const files = await octokit.rest.pulls.listFiles({
-            owner: github_1.context.repo.owner,
-            repo: github_1.context.repo.repo,
-            pull_number: pullRequest.number,
+            //   owner: context.repo.owner,
+            //   repo: context.repo.repo,
+            //   pull_number: pullRequest!.number,
+            owner: "kasuken",
+            repo: "TestCustomActionUrl",
+            pull_number: 4,
         });
         files.data.forEach((file) => {
-            //file.
+            console.log(file);
         });
     }
     catch (error) {
